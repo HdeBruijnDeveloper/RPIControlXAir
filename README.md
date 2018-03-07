@@ -1,4 +1,4 @@
-"# RPIControlXAir" 
+Script to control the mixer with a Behringer BCF2000 controller 
 
 
 
