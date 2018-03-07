@@ -1,1 +1,1 @@
-
+X-AirCmdList.csv: contains the osc messages to read and write to the X-Air mixer
