@@ -33,7 +33,11 @@ firstSelectButtonNumber = 24
 lastSelectButtonNumber = 31
 
 selectButtonIndex = 0
-		
+
+lineInGroupIndex = 2
+fxSendGroupIndex = 3
+busFadersGroupIndex = 4
+	
 def runtests():
 	return
 	
@@ -56,11 +60,14 @@ class MidiHandler(object):
 	def __call__(self, event, data=None):
 		global faderGroup
 		global selectButtonIndex
-		#print ("current fadergroup # : ", faderGroup)
-		#print ("current oscClient: ", oscClient)
+		global lineInGroupIndex
+		global fxSendGroupIndex
+		global busFadersGroupIndex
+		print ("current fadergroup # : ", faderGroup)
+		#print ("current oscClientMidiHandler: ", oscClientMidiHandler)
 		#print ("current returnPort: ", returnPort)
 		message, deltatime = event 
-		print (message)
+		#print (message)
 		if message[0] >= firstFaderPitchNumber and message[0] <= lastFaderPitchNumber:
 			faderIndex = message[0] - firstFaderPitchNumber + 1
 			fadervalue = message[2] * 127 + message[1]
@@ -69,40 +76,51 @@ class MidiHandler(object):
 				faderIndex = faderIndex + (faderGroup * 8)
 				#/ch/01/mix/fader,f,0.0-1.0,"-oo - +10","Channel fader level",
 				oscMsg = "/ch/{}/mix/fader".format(str(faderIndex).zfill(2))
-
+				
 				# Send fader position to X-Air
-				oscClient.send_message(oscMsg, fadervalue)
+				oscClientMidiHandler.send_message(oscMsg, fadervalue)
 
-			if faderGroup == 2: # aux input [17-18], effect returns [1..4]
+			if faderGroup == lineInGroupIndex: # line input [17-18], effect returns [1..4] and LR mix
 				if faderIndex == 1:
 					# /rtn/aux/mix/fader,f,0.0-1.0,"-oo - +10","Aux Return fader level",
 					oscMsg = "/rtn/aux/mix/fader"
 
-				if faderIndex >= 2 and faderIndex <= 5:
-					# /rtn/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx Return [1..4] fader level",
-					oscMsg = "/rtn/{}/mix/fader".format(str(faderIndex - 1))
+					# Send fader position to X-Air
+					oscClientMidiHandler.send_message(oscMsg, fadervalue)
 
-				# Send fader position to X-Air
-				oscClient.send_message(oscMsg, fadervalue)
+				if faderIndex >= 2 and faderIndex <= 5:
+					# /dca/1/fader,f,0.0-1.0,"-oo - +10","DCA fader level",
+					oscMsg = "/dca/{}/fader".format(str(faderIndex - 1))
+
+					# /rtn/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx Return [1..4] fader level",
+					#oscMsg = "/rtn/{}/mix/fader".format(str(faderIndex - 1))
+
+					# Send fader position to X-Air
+					oscClientMidiHandler.send_message(oscMsg, fadervalue)
+
+				if faderIndex == 8:
+					handleMainFaderPosition(fadervalue)
 				
-			if faderGroup == 3: # 6 bus (routed to aux outputs) master faders
+			if faderGroup == busFadersGroupIndex: # 6 bus (routed to aux outputs) master faders and LR mix
 				if faderIndex >= 1 and faderIndex <= 6:
 					oscMsg = "/bus/{}/mix/fader".format(str(faderIndex))
 					
 					# Send fader position to X-Air
-					oscClient.send_message(oscMsg, fadervalue)
-			#
-			if faderGroup == 4: # 4 fxsend and LR mix
+					oscClientMidiHandler.send_message(oscMsg, fadervalue)
+					
+				if faderIndex == 8:
+					handleMainFaderPosition(fadervalue)
+
+			if faderGroup == fxSendGroupIndex:
 				if faderIndex >= 1 and faderIndex <= 4:
 					#/fxsend/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx send fader level",
 					oscMsg = "/fxsend/{}/mix/fader".format(str(faderIndex))
-					
-				if faderIndex == 5:
-					# /lr/mix/fader,f,0.0-1.0,"-oo - +10","Main LR fader level",
-					oscMsg = "/lr/mix/fader"
 
-				# Send fader position to X-Air
-				oscClient.send_message(oscMsg, fadervalue)
+					# Send fader position to X-Air
+					oscClientMidiHandler.send_message(oscMsg, fadervalue)
+					
+				if faderIndex == 8:
+					handleMainFaderPosition(fadervalue)
 				
 			#or
 			#if faderGroup == 4: # 4  aux input [17-18], 4 DCA, 2 effect-return, LR volume
@@ -129,7 +147,7 @@ class MidiHandler(object):
 						panvalue = 0
 					print (oscMsg, panvalue)
 						
-					oscClient.send_message(oscMsg, panvalue)
+					oscClientMidiHandler.send_message(oscMsg, panvalue)
 						
 		if message[0] == midiNoteOn:
 			if message[1] >= firstFaderGoupButtonNumber and message[1] <= lastFaderGoupButtonNumber and message[2] == 127:
@@ -180,25 +198,35 @@ class MidiHandler(object):
 					# Receive mute on/off from X-Air
 					mute = fetchValueByOscMessageInMidiHandler(oscMsg)
 					# Send channel mute on/off to X-Air
-					oscClient.send_message(oscMsg, 1 - mute)
+					oscClientMidiHandler.send_message(oscMsg, 1 - mute)
 		
-				if faderGroup == 2: # aux input [17-18], effect returns [1..4]
+				if faderGroup == lineInGroupIndex: # line input [17-18], effect returns [1..4] and LR mix
 					mute = 0
 					if channelMuteIndex == 1:
 						# /rtn/aux/mix/on,i,0-1,"OFF, ON","Aux Return mute",
 						oscMsg = "/rtn/aux/mix/on"
-
-					if channelMuteIndex >= 2 and channelMuteIndex <= 5:
-						# /rtn/1/mix/on,i,0-1,"OFF, ON","Fx Return [1..4] mute",
-						oscMsg = "/rtn/{}/mix/on".format(str(channelMuteIndex - 1))
-
-					if channelMuteIndex <= 5:
+						
 						# Receive mute on/off from X-Air
 						mute = fetchValueByOscMessageInMidiHandler(oscMsg)
 						# Send mute on/off to X-Air
-						oscClient.send_message(oscMsg, (1 - mute))
+						oscClientMidiHandler.send_message(oscMsg, (1 - mute))
+						
+					if channelMuteIndex >= 2 and channelMuteIndex <= 5:
+						# /dca/1/on,i,0-1,"OFF, ON","DCA [1..4] Off/On",
+						oscMsg = "/dca/{}/on".format(str(channelMuteIndex - 1))
 
-				if faderGroup == 3: # 6 bus (routed to aux outputs) master faders
+						# /rtn/1/mix/on,i,0-1,"OFF, ON","Fx Return [1..4] mute",
+						#oscMsg = "/rtn/{}/mix/on".format(str(channelMuteIndex - 1))
+
+						# Receive mute on/off from X-Air
+						mute = fetchValueByOscMessageInMidiHandler(oscMsg)
+						# Send mute on/off to X-Air
+						oscClientMidiHandler.send_message(oscMsg, (1 - mute))
+					
+					if channelMuteIndex == 8:
+						toggleMainMuteButton()
+						
+				if faderGroup == busFadersGroupIndex: # 6 bus (routed to aux outputs) master faders and LR mix
 					if channelMuteIndex >= 1 and channelMuteIndex <= 6:
 						# /bus/1/mix/on,i,0-1,"OFF, ON","Mixbus mute",
 						oscMsg = "/bus/{}/mix/on".format(str(channelMuteIndex))
@@ -206,46 +234,65 @@ class MidiHandler(object):
 						# Receive mute on/off from X-Air
 						mute = fetchValueByOscMessageInMidiHandler(oscMsg)
 						# Send mute on/off to X-Air
-						oscClient.send_message(oscMsg, (1 - mute))
+						oscClientMidiHandler.send_message(oscMsg, (1 - mute))
 
-				if faderGroup == 4: # 4 fxsend and LR mix
+					if channelMuteIndex == 8:
+						toggleMainMuteButton()
+						
+				if faderGroup == fxSendGroupIndex:
 					if channelMuteIndex >= 1 and channelMuteIndex <= 4:
 						# /fxsend/1/mix/on,i,0-1,"OFF, ON","Fx send mute",
 						oscMsg = "/fxsend/{}/mix/on".format(str(channelMuteIndex))
-
-					if channelMuteIndex == 5:
-						# /lr/mix/on,i,0-1,"OFF, ON","Main LR mute",
-						oscMsg = "/lr/mix/on"
-
-					if channelMuteIndex <= 5:
+						
 						# Receive mute on/off from X-Air
 						mute = fetchValueByOscMessageInMidiHandler(oscMsg)
 						# Send mute on/off to X-Air
-						oscClient.send_message(oscMsg, (1 - mute))
+						oscClientMidiHandler.send_message(oscMsg, (1 - mute))
+						
+					if channelMuteIndex == 8:
+						toggleMainMuteButton()
+		
+def handleMainFaderPosition(fadervalue):
+	# /lr/mix/fader,f,0.0-1.0,"-oo - +10","Main LR fader level",
+	oscMsg = "/lr/mix/fader"
 
+	# Send fader position to X-Air
+	oscClientMidiHandler.send_message(oscMsg, fadervalue)
+
+def toggleMainMuteButton():
+	# /lr/mix/on,i,0-1,"OFF, ON","Main LR mute",
+	oscMsg = "/lr/mix/on"
+	
+	# Receive mute on/off from X-Air
+	mute = fetchValueByOscMessageInMidiHandler(oscMsg)
+	# Send mute on/off to X-Air
+	oscClientMidiHandler.send_message(oscMsg, (1 - mute))
+						
 def setupMidi():
 	global returnPort
-
-	midiin = rtmidi.MidiIn()
-	names = midiin.get_ports()
-	print (names)
-	for name in names:
-		print (name)
-		port, port_name = rtmidi.midiutil.open_midiport(name)
-		print (port)
-		print (port_name)
-		
-		if "BCF2000" in name:
-			print ("BCF Found!!")
-			port.set_callback(MidiHandler(name))
-			
-			returnPort, port_name = rtmidi.midiutil.open_midiport(name, "output")
-			print (returnPort)
+	try:
+		midiin = rtmidi.MidiIn()
+		names = midiin.get_ports()
+		print (names)
+		for name in names:
+			print (name)
+			port, port_name = rtmidi.midiutil.open_midiport(name)
+			print (port)
 			print (port_name)
 			
-			resetMidiController()
+			if "BCF2000" in name:
+				print ("BCF Found!!")
+				port.set_callback(MidiHandler(name))
 				
-			return port
+				returnPort, port_name = rtmidi.midiutil.open_midiport(name, "output")
+				print (returnPort)
+				print (port_name)
+				
+				resetMidiController()
+					
+				return port
+	except Exception as err:
+		print ("exception in setupMidi: ", err)
 			
 def resetMidiController():
 	# reset all faders
@@ -279,13 +326,17 @@ def main():
 	clientmulticast = None
 	ipaddress = get_ip()
 	print(ipaddress)
-
+	if ipaddress == "127.0.0.1":
+		time.sleep(10)
+		ipaddress = get_ip()
+		print(ipaddress)
+		
 	#for val in ipaddresses:
 	a,b,c,d = ipaddress.split(".")
 	if a == "10":
-		mcastip = ".".join([a, "255", "255", "255"])
+		mcastip = ".".join([a, b, c, "255"])
 	elif a == "172":
-		mcastip = ".".join([a, b, "255", "255"])
+		mcastip = ".".join([a, b, c, "255"])
 	elif a == "192":
 		mcastip = ".".join([a, b, c, "255"])
 	else:
@@ -345,24 +396,49 @@ def Doit(xairaddress, port):
 		oscMsg = "/bus/{}/mix/lr".format(str(i+1))
 		oscClient.send_message(oscMsg, 0)
 		
-		# set all aux out tap to PRE+M (9)
+		# set all aux out tap to POST (10)
 		# /routing/aux/01/pos,i,0-10,"AIN, AIN+M, IN, IN+M, PREEQ, PREEQ+M, POSTEQ, POSTEQ+M, PRE, PRE+M, POST","Routing Aux [1..6] tap",	
 		oscMsg = "/routing/aux/{}/pos".format(str(i+1).zfill(2))
-		oscClient.send_message(oscMsg, 9)
+		oscClient.send_message(oscMsg, 10)
 		
 		# set aux source to bus 1-6
 		# /routing/aux/01/src,i,0-55,"Ch01-16, AuxL-R, Fx1L-Fx4R, Bus1-6, Send1-4, L, R, U1-18","Routing Aux [1..6] source",
 		oscMsg = "/routing/aux/{}/src".format(str(i+1).zfill(2))
 		oscClient.send_message(oscMsg, 26 + i)
+	
+	# initialize fx return
+	for i in range(4):
+		# set fader to main at 0 db (??f)
+		# /rtn/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx Return [1..4] fader level",
+		oscMsg = "/rtn/{}/mix/fader".format(str(i+1))
+		#oscClient.send_message(oscMsg, 0.7)
+
+		# set send to LR on
+		# /rtn/1/mix/lr,i,0-1,"OFF, ON","Fx Return [1..4] LR assignment",
+		oscMsg = "/rtn/{}/mix/lr".format(str(i+1))
+		#oscClient.send_message(oscMsg, 1)
+		
+		# set effect tap for the busses to pre 
+		for j in range(6):
+			# /rtn/1/mix/01/tap,i,0-5,"IN, PREEQ, POSTEQ, PRE, POST, GRP","Fx Return [1..4] mixbus sends tap",
+			oscMsg = "/rtn/{}/mix/{}/tap".format(str(i+1), str(j+1).zfill(2))
+			#oscClient.send_message(oscMsg, 3)
+			
+			# /rtn/1/mix/01/level,f,0.0-1.0,"-oo - +10","Fx Return [1..4] mixbus sends level",
+			oscMsg = "/rtn/{}/mix/{}/level".format(str(i+1), str(j+1).zfill	(2))
+			#oscClient.send_message(oscMsg, 0.0)
 
 	time.sleep(1)
 	
 	print (port)		
 	print (returnPort)
-	
+
 	while True:
-		time.sleep(0.3)
-		setMidiController()
+		try:
+			time.sleep(0.3)
+			setMidiController()
+		except Exception as err:
+			print ("exception in loop: ", err)
 			
 def fetchValueByOscMessage(msg):
 		oscClient.send_message(msg)
@@ -374,24 +450,34 @@ def fetchValueByOscMessageInMidiHandler(msg):
 		
 def setMidiController():
 	global faderGroup
-	#print ("setMidiController faderGroup=", faderGroup)
+	global busFaderGroupIndex
+	global lineInGroupIndex
+	global fxSendGroupIndex
+	global busFadersGroupIndex
+	
+	print ("setMidiController faderGroup=", faderGroup)
 	#print (selectButtonIndex)
+	faderGroupLocal = faderGroup
 	
 	if faderGroup == 0 or faderGroup == 1: # channel [1-8] or channel [9-16]
 		for faderIndex in range(8):
+			if faderGroup != faderGroupLocal:
+				break
 			channelindex = (faderGroup * 8) + faderIndex + 1
 			#/ch/01/mix/fader,f,0.0-1.0,"-oo - +10","Channel fader level",
 			oscMsg = "/ch/{}/mix/fader".format(str(channelindex).zfill(2))
+
 			# Receive fader position from X-Air
 			faderposition = fetchValueByOscMessage(oscMsg)
-			#print (oscMsg, faderposition)
 			
 			setControllerFaderPosition(faderIndex, faderposition)
 			
 			# getMuteButtonStatus
 			# /ch/01/mix/on,i,0-1,"OFF, ON","Channel mute",
 			oscMsg = "/ch/{}/mix/on".format(str(channelindex).zfill(2))
+
 			mute = fetchValueByOscMessage(oscMsg)
+
 			setControllerMuteButton(faderIndex, mute)
 			
 			if selectButtonIndex == 0:
@@ -401,19 +487,17 @@ def setMidiController():
 				
 				# /ch/01/mix/pan,f,0.0-1.0,"-100 - +100","Channel pan value",
 				oscMsg = "/ch/{}/mix/pan".format(str(channelindex).zfill(2))
-				panvalue = fetchValueByOscMessage(oscMsg)
-				if faderIndex == 0:
-					print (oscMsg, panvalue)
-				setControllerEncoder(faderIndex, panvalue)
+				#panvalue = fetchValueByOscMessage(oscMsg)
+
+				#setControllerEncoder(faderIndex, panvalue)
 			else:
 				# encoder 1: /ch/01/preamp/hpf,f,0.0-1.0,"20 - 200","Channel low cut frequency (hz)",
 				oscMsg = "/ch/{}/preamp/hpf".format(str(selectButtonIndex).zfill(2))
-				hpfvalue = fetchValueByOscMessage(oscMsg)
-				setControllerEncoder(selectButtonIndex - 1, panvalue)
-
+				#hpfvalue = fetchValueByOscMessage(oscMsg)
+				#setControllerEncoder(selectButtonIndex - 1, panvalue)
+				# encoder 1 button: /ch/01/preamp/hpf/on
 				
-				
-	if faderGroup == 2: # aux input [17-18], effect returns [1..4]
+	if faderGroup == lineInGroupIndex: # line input [17-18], effect returns [1..4]
 		# /rtn/aux/mix/fader,f,0.0-1.0,"-oo - +10","Aux Return fader level",
 		oscMsg = "/rtn/aux/mix/fader"
 		# Receive fader position from X-Air
@@ -428,23 +512,30 @@ def setMidiController():
 		for faderIndex in range(4):
 			# Fx Return [1..4]
 			returnindex = faderIndex + 1
+			# /dca/1/fader,f,0.0-1.0,"-oo - +10","DCA fader level",
+			#oscMsg = "/dca/{}/fader".format(str(returnindex))
+
 			# /rtn/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx Return [1..4] fader level",
 			oscMsg = "/rtn/{}/mix/fader".format(str(returnindex))
 			# Receive fader position from X-Air
 			faderposition = fetchValueByOscMessage(oscMsg)
 			setControllerFaderPosition(returnindex, faderposition)
 			
+			# /dca/1/on,i,0-1,"OFF, ON","DCA [1..4] Off/On",
+			#oscMsg = "/dca/{}/on".format(str(returnindex))
+
 			#/rtn/1/mix/on,i,0-1,"OFF, ON","Fx Return [1..4] mute",
 			oscMsg = "/rtn/{}/mix/on".format(str(returnindex))
 			mute = fetchValueByOscMessage(oscMsg)
 			setControllerMuteButton(returnindex, mute)
 			
-		# set 3 unused faders to 0
+		# set 2 unused faders to 0
 		setControllerFaderPosition(5, 0)
 		setControllerFaderPosition(6, 0)
-		setControllerFaderPosition(7, 0)
+		
+		setMainVolumeFader(7)
 
-	if faderGroup == 3: # 6 bus (routed to aux outputs) master faders
+	if faderGroup == busFadersGroupIndex:
 		for faderIndex in range(6):
 			busindex = faderIndex + 1
 			oscMsg = "/bus/{}/mix/fader".format(str(busindex))
@@ -457,11 +548,12 @@ def setMidiController():
 			mute = fetchValueByOscMessage(oscMsg)
 			setControllerMuteButton(faderIndex, mute)
 			
-		# set 2 unused faders to 0
+		# set unused fader to 0
 		setControllerFaderPosition(6, 0)
-		setControllerFaderPosition(7, 0)
 
-	if faderGroup == 4: # 4 fxsend and LR mix
+		setMainVolumeFader(7)
+		
+	if faderGroup == fxSendGroupIndex: # 4 fxsend and LR mix
 		for faderIndex in range(4):
 			sendIndex = faderIndex + 1
 			# /fxsend/1/mix/fader,f,0.0-1.0,"-oo - +10","Fx send fader level",
@@ -474,22 +566,25 @@ def setMidiController():
 			oscMsg = "/fxsend/{}/mix/on".format(str(sendIndex))
 			mute = fetchValueByOscMessage(oscMsg)
 			setControllerMuteButton(faderIndex, mute)
-
-		# /lr/mix/fader,f,0.0-1.0,"-oo - +10","Main LR fader level",
-		oscMsg = "/lr/mix/fader"
-		# Receive fader position from X-Air
-		faderposition = fetchValueByOscMessage(oscMsg)
-		setControllerFaderPosition(4, faderposition)
 		
-		# /lr/mix/on,i,0-1,"OFF, ON","Main LR mute",
-		oscMsg = "/lr/mix/on"
-		mute = fetchValueByOscMessage(oscMsg)
-		setControllerMuteButton(4, mute)
-			
 		# set 3 unused faders to 0
+		setControllerFaderPosition(4, 0)
 		setControllerFaderPosition(5, 0)
 		setControllerFaderPosition(6, 0)
-		setControllerFaderPosition(7, 0)
+
+		setMainVolumeFader(7)
+		
+def setMainVolumeFader(faderIndex):
+	# /lr/mix/fader,f,0.0-1.0,"-oo - +10","Main LR fader level",
+	oscMsg = "/lr/mix/fader"
+	# Receive fader position from X-Air
+	faderposition = fetchValueByOscMessage(oscMsg)
+	setControllerFaderPosition(faderIndex, faderposition)
+	
+	# /lr/mix/on,i,0-1,"OFF, ON","Main LR mute",
+	oscMsg = "/lr/mix/on"
+	mute = fetchValueByOscMessage(oscMsg)
+	setControllerMuteButton(faderIndex, mute)
 		
 def setControllerButton(button, value):
 	midi_message = bytearray(3)
@@ -538,15 +633,14 @@ def setControllerEncoder(index, panvalue):
 	midi_message[0] = midiCC + 2
 	midi_message[1] = encoder
 	midi_message[2] = 0 #int(panvalue * 127) #
-	if index == 0:
-		print (midi_message)
 		
 	returnPort.send_message(midi_message)
-
 	
 def receive_message_from_client(localclient):
+
 	data, server = localclient._sock.recvfrom(4096)
 	packet = osc_packet.OscPacket(data)
+
 	for timed_msg in packet.messages:
 		now = time.time()
 		return timed_msg.message.params
